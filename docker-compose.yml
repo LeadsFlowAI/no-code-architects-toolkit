@@ -8,6 +8,8 @@ services:
     volumes:
       - storage:/var/www/html/storage/app
       - logs:/var/www/html/storage/logs
+    ports:
+      - "80:80" 
     restart: unless-stopped
 
 volumes:
