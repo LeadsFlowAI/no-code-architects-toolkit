@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   ncat:
-    image: stephengpope/no-code-architects-toolkit:latest
+    image: leadsflowai/no-code-architects-toolkit:latest
     env_file:
       - .env
     volumes:
