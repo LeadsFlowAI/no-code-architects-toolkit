@@ -17,5 +17,7 @@ services:
 volumes:
   storage:
     driver: local
+    external: true
   logs:
     driver: local
+    external: true
