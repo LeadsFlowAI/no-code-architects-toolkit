@@ -4,16 +4,18 @@ from app_utils import queue_task_wrapper
 import boto3
 import os
 import uuid
+import logging
 
+logger = logging.getLogger(__name__)
 v1_s3_upload_binary_bp = Blueprint('v1_s3_upload_binary', __name__)
 
 @v1_s3_upload_binary_bp.route('/v1/s3/upload-binary', methods=['POST'])
 @authenticate
-@queue_task_wrapper(bypass_queue=False)
-def s3_upload_binary(job_id):
+@queue_task_wrapper(bypass_queue=True)
+def s3_upload_binary(job_id, data):
     try:
         if 'file' not in request.files:
-            return jsonify({"error": "Missing file in form-data"}), 400
+            return {"error": "Missing file in form-data"}, "/v1/s3/upload-binary", 400
 
         uploaded_file = request.files['file']
         filename = request.form.get('filename', uploaded_file.filename)
@@ -34,12 +36,13 @@ def s3_upload_binary(job_id):
 
         url = f"{os.getenv('S3_ENDPOINT_URL')}/{bucket}/{key}"
 
-        return jsonify({
+        return {
             "filename": key,
             "bucket": bucket,
             "url": url,
             "public": make_public
-        }), 200
+        }, "/v1/s3/upload-binary", 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        logger.error(f"Job {job_id} - Upload error: {str(e)}")
+        return {"error": str(e)}, "/v1/s3/upload-binary", 500
