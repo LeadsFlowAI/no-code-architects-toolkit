@@ -1,38 +1,45 @@
-from fastapi import APIRouter, UploadFile, File, Form, Header, HTTPException
-from fastapi.responses import JSONResponse
+from flask import Blueprint, request, jsonify
+from services.authentication import authenticate
+from app_utils import queue_task_wrapper
 import boto3
-import uuid
 import os
+import uuid
 
-router = APIRouter()
+v1_s3_upload_binary_bp = Blueprint('v1_s3_upload_binary', __name__)
 
-@router.post("/v1/s3/upload-binary")
-async def upload_binary_file(
-    file: UploadFile = File(...),
-    filename: str = Form(None),
-    x_api_key: str = Header(...),
-):
-    # Auth simple (tu peux améliorer selon ta config)
-    if x_api_key != os.getenv("API_KEY", "local-dev-key-123"):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+@v1_s3_upload_binary_bp.route('/v1/s3/upload-binary', methods=['POST'])
+@authenticate
+@queue_task_wrapper(bypass_queue=False)
+def s3_upload_binary(job_id):
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "Missing file in form-data"}), 400
 
-    # Préparer Minio/S3
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-        aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
-        aws_secret_access_key=os.getenv("S3_SECRET_KEY"),
-        region_name=os.getenv("S3_REGION", "us-east-1"),
-    )
-    bucket = os.getenv("S3_BUCKET_NAME", "media")
-    key = filename or f"{uuid.uuid4()}_{file.filename}"
+        uploaded_file = request.files['file']
+        filename = request.form.get('filename', uploaded_file.filename)
+        make_public = request.form.get('public', 'false').lower() == 'true'
 
-    # Uploader
-    s3.upload_fileobj(file.file, bucket, key)
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+            aws_access_key_id=os.getenv("S3_ACCESS_KEY"),
+            aws_secret_access_key=os.getenv("S3_SECRET_KEY"),
+            region_name=os.getenv("S3_REGION", "us-east-1"),
+        )
 
-    return JSONResponse({
-        "filename": key,
-        "bucket": bucket,
-        "url": f"{os.getenv('S3_ENDPOINT_URL')}/{bucket}/{key}",
-        "public": False
-    })
+        bucket = os.getenv("S3_BUCKET_NAME", "media")
+        key = f"{uuid.uuid4()}_{filename}"
+
+        s3.upload_fileobj(uploaded_file, bucket, key)
+
+        url = f"{os.getenv('S3_ENDPOINT_URL')}/{bucket}/{key}"
+
+        return jsonify({
+            "filename": key,
+            "bucket": bucket,
+            "url": url,
+            "public": make_public
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
